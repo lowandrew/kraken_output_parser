@@ -33,7 +33,6 @@ class KrakenData:
             return 'Other'
 
 
-# TODO: This seems to be working based on my extremely limited testing of it. Look at more thorougly next week.
 if __name__ == '__main__':
     taxonomy_order = ['Unclassified', 'Kingdom', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Other']
     parser = argparse.ArgumentParser()
@@ -53,9 +52,11 @@ if __name__ == '__main__':
                         default='Bacteria',
                         help='Subset of data to look at (i.e. only look at families within Firmicutes). Defaults to'
                              ' examining all bacteria.')
+    parser.add_argument('-o', '--output_file',
+                        type=str,
+                        required=True,
+                        help='Path to output file. Will be written in CSV format.')
     args = parser.parse_args()
-
-    # TODO: Change to writing to output file instead of printing to STDOUT
 
     # Keep all of our data in one giant list that contains dictionaries - don't think we'll ever run into
     # large enough datasets that this is a problem.
@@ -82,6 +83,7 @@ if __name__ == '__main__':
                 write_output = True
                 tax_level = taxonomy_order.index(x.tax_level)
                 continue
+            # If we've started writing, check that we haven't escaped our tax level. If we have, stop.
             if tax_level is not None:
                 if taxonomy_order.index(x.tax_level) <= tax_level:
                     break
@@ -103,12 +105,13 @@ if __name__ == '__main__':
         if item != 'Sample':
             output_header += item + ','
     output_header = output_header[:-1]
-    print(output_header)
-    for sample in output_list_of_dicts:
-        output_line = ''
-        for item in output_header.split(','):
-            output_line += str(sample[item]) + ','
-        output_line = output_line[:-1]
-        print(output_line)
+    with open(args.output_file, 'w') as outfile:
+        outfile.write(output_header + '\n')
+        for sample in output_list_of_dicts:
+            output_line = ''
+            for item in output_header.split(','):
+                output_line += str(sample[item]) + ','
+            output_line = output_line[:-1]
+            outfile.write(output_line + '\n')
 
 

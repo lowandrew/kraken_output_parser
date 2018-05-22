@@ -33,6 +33,17 @@ class KrakenData:
             return 'Other'
 
 
+def tax_dict_to_string(tax_dict, level):
+    outstr = ''
+    tax_order = ['Kingdom', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Other']
+    for place in tax_order:
+        if tax_dict[place] != '':
+            outstr += place[0] + '_' + tax_dict[place] + ';'
+        if level == place:
+            break
+    return outstr[:-1]
+
+
 if __name__ == '__main__':
     taxonomy_order = ['Unclassified', 'Kingdom', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Other']
     parser = argparse.ArgumentParser()
@@ -56,12 +67,20 @@ if __name__ == '__main__':
                         type=str,
                         required=True,
                         help='Path to output file. Will be written in CSV format.')
+    parser.add_argument('-f', '--full_taxonomy',
+                        default=False,
+                        action='store_true',
+                        help='If enabled, will output full taxonomy as headers instead of only current genus/species/'
+                             'whatever else.')
     args = parser.parse_args()
 
     # Keep all of our data in one giant list that contains dictionaries - don't think we'll ever run into
     # large enough datasets that this is a problem.
     output_list_of_dicts = list()
 
+    taxonomy_dict = {'Kingdom': '', 'Domain': '', 'Phylum': '',
+                     'Class': '', 'Order': '', 'Family': '',
+                     'Genus': '', 'Species': ''}
     for input_file in args.input_file:
         # Dictionary will store read counts for each family/genus/whatever found, as well as the sample that we're on.
         output_dict = dict()
@@ -78,6 +97,7 @@ if __name__ == '__main__':
             quit()
         for line in lines:
             x = KrakenData(line)
+            taxonomy_dict[x.tax_level] = x.name
             if x.name == args.taxonomy:  # Check if we've hit desired taxonomy. If yes, set our write output flag
                 # and go to next loop iteration.
                 write_output = True
@@ -88,7 +108,11 @@ if __name__ == '__main__':
                 if taxonomy_order.index(x.tax_level) <= tax_level:
                     break
             if x.tax_level.upper() == args.level.upper() and write_output:
-                output_dict[x.name] = str(x.num_reads)
+                full_taxonomy = tax_dict_to_string(taxonomy_dict, args.level)
+                if args.full_taxonomy:
+                    output_dict[full_taxonomy] = str(x.num_reads)
+                else:
+                    output_dict[x.name] = str(x.num_reads)
         output_list_of_dicts.append(output_dict)
 
     # The above gets us to a point where we know what each sample has - now need to write it all to a nice output file.

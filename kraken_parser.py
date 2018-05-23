@@ -1,14 +1,17 @@
 #!/usr/bin/env python
 
 import argparse
+from ete3 import NCBITaxa
 
 
 class KrakenData:
     def __init__(self, report_line):
         self.tax_level = self.determine_tax_level(report_line.split()[3])
         self.num_reads = int(report_line.split()[1])
+        self.num_reads_direct = int(report_line.split()[2])
         self.name = report_line.split()[5:]
         self.name = ' '.join(self.name).rstrip()
+        self.ncbi_tax_id = int(report_line.split()[4])
 
     def determine_tax_level(self, tax_coding):
         if tax_coding == 'U':
@@ -33,14 +36,19 @@ class KrakenData:
             return 'Other'
 
 
-def tax_dict_to_string(tax_dict, level):
+def taxid_to_lineage_string(taxid):
+    tax_order = ['kingdom', 'domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
     outstr = ''
-    tax_order = ['Kingdom', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Other']
-    for place in tax_order:
-        if tax_dict[place] != '':
-            outstr += place[0] + '_' + tax_dict[place] + ';'
-        if level == place:
-            break
+    ncbi = NCBITaxa()
+    lineage = ncbi.get_lineage(taxid)
+    names = ncbi.get_taxid_translator(lineage)
+    for level in tax_order:
+        for tid in names:
+            rank = ncbi.get_rank([tid])
+            if rank[tid] == 'superkingdom':
+                rank[tid] = 'domain'
+            if rank[tid] == level:
+                outstr += level[0] + '_' + names[tid] + ';'
     return outstr[:-1]
 
 
@@ -78,9 +86,6 @@ if __name__ == '__main__':
     # large enough datasets that this is a problem.
     output_list_of_dicts = list()
 
-    taxonomy_dict = {'Kingdom': '', 'Domain': '', 'Phylum': '',
-                     'Class': '', 'Order': '', 'Family': '',
-                     'Genus': '', 'Species': ''}
     for input_file in args.input_file:
         # Dictionary will store read counts for each family/genus/whatever found, as well as the sample that we're on.
         output_dict = dict()
@@ -97,7 +102,6 @@ if __name__ == '__main__':
             quit()
         for line in lines:
             x = KrakenData(line)
-            taxonomy_dict[x.tax_level] = x.name
             if x.name == args.taxonomy:  # Check if we've hit desired taxonomy. If yes, set our write output flag
                 # and go to next loop iteration.
                 write_output = True
@@ -107,12 +111,21 @@ if __name__ == '__main__':
             if tax_level is not None:
                 if taxonomy_order.index(x.tax_level) <= tax_level:
                     break
-            if x.tax_level.upper() == args.level.upper() and write_output:
-                full_taxonomy = tax_dict_to_string(taxonomy_dict, args.level)
+            if x.tax_level.upper() == args.level.upper() and write_output and x.num_reads > 0:
+                # full_taxonomy = tax_dict_to_string(taxonomy_dict, args.level)
                 if args.full_taxonomy:
+                    full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
                     output_dict[full_taxonomy] = str(x.num_reads)
                 else:
                     output_dict[x.name] = str(x.num_reads)
+            elif write_output and taxonomy_order.index(args.level) > taxonomy_order.index(x.tax_level) \
+                    and x.num_reads_direct > 0:
+                # full_taxonomy = tax_dict_to_string(taxonomy_dict, x.tax_level)
+                if args.full_taxonomy:
+                    full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
+                    output_dict[full_taxonomy + '_unassigned'] = str(x.num_reads_direct)
+                else:
+                    output_dict[x.name + '_unassigned'] = str(x.num_reads_direct)
         output_list_of_dicts.append(output_dict)
 
     # The above gets us to a point where we know what each sample has - now need to write it all to a nice output file.

@@ -52,6 +52,26 @@ def taxid_to_lineage_string(taxid):
     return outstr[:-1]
 
 
+def determine_unassigned_rank(taxid):
+    """
+    Given a taxid, will use ete3 to look at all its descendants. Based on what it finds, will infer what taxonomic
+    level the taxid should be at. Useful for things that have 'no rank' according to NCBI.
+    :param taxid: NCBI taxid, should be an integer
+    :return: string that says what taxonomy level we're at, one of the options from tax_order
+    """
+    tax_order = ['kingdom', 'domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+    ncbi = NCBITaxa()
+    descendants = ncbi.get_descendant_taxa(taxid, intermediate_nodes=True)
+    lowest_rank = 900
+    for descendant in descendants:
+        rank = ncbi.get_rank([descendant])
+        if rank[descendant] in tax_order:
+            rank_number = tax_order.index(rank[descendant])
+            if rank_number < lowest_rank:
+                lowest_rank = rank_number
+    return tax_order[lowest_rank - 1]
+
+
 if __name__ == '__main__':
     taxonomy_order = ['Unclassified', 'Kingdom', 'Domain', 'Phylum', 'Class', 'Order', 'Family', 'Genus', 'Species', 'Other']
     parser = argparse.ArgumentParser()
@@ -125,9 +145,12 @@ if __name__ == '__main__':
             # ETE3 classifies them as no rank, but they still get reads assigned to them that end up being missed.
             # If this is the case, we need to check their taxonomic level to see if they're above our tax level,
             # and if so output their number of directly assigned reads.
-            elif x.tax_level == 'Other' and write_output and x.num_reads_direct > 0:
+            elif x.tax_level == 'Other' and write_output:
                 if args.full_taxonomy:
                     full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
+                    # Only want to write output if the level isn't beyond specified tax level.
+                    # Since we can't do it directly, just check that the identifiers for levels beyond desired
+                    # level aren't there (i.e. no _g denoting genus found when we only want to go to family level).
                     good_to_write = True
                     for i in range(taxonomy_order.index(args.level), len(taxonomy_order) - 1):
                         if taxonomy_order[i][0].lower() + '_' in full_taxonomy:
@@ -135,7 +158,20 @@ if __name__ == '__main__':
                     if good_to_write:
                         if ',' in x.name:
                             x.name = x.name.replace(',', ':')
-                        output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads_direct)
+                        # Final check: sometimes these taxonomic inbetween groups are truly an extra level (so
+                        # between a level between family and genus, for example), and so for a genus level report we
+                        # only want to report number of reads that map to this level and no further(num_reads_direct).
+                        # Other times, these essentially take the place of a level (so it may not be called a genus, but
+                        # is the only level between family and species, and therefore everything mapping to it or
+                        # anything below it should be reported(num_reads).
+                        # Need to figure out which of these two scenarios is happening.
+                        # Use descendant nodes to figure out what level we're equivalent to. If equivalent to desired
+                        # level, we're taking it's place, anything higher is just another level.
+                        inferred_tax_level = determine_unassigned_rank(x.ncbi_tax_id)
+                        if inferred_tax_level.capitalize() == args.level:
+                            output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads)
+                        else:
+                            output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads_direct)
             # Other case is that we're at a tax level higher than desired. Here, report unassigned reads.
             elif write_output and taxonomy_order.index(args.level) > taxonomy_order.index(x.tax_level) \
                     and x.num_reads_direct > 0:

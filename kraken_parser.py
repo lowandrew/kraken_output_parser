@@ -100,32 +100,52 @@ if __name__ == '__main__':
             print('ERROR: Could not find file {}: Please make sure the path to the file is correct. '
                   'Exiting...'.format(input_file))
             quit()
+        check_tax_level = True
         for line in lines:
             x = KrakenData(line)
             if x.name == args.taxonomy:  # Check if we've hit desired taxonomy. If yes, set our write output flag
                 # and go to next loop iteration.
                 write_output = True
                 tax_level = taxonomy_order.index(x.tax_level)
-                continue
+                check_tax_level = False
+                # continue
             # If we've started writing, check that we haven't escaped our tax level. If we have, stop.
-            if tax_level is not None:
+            if tax_level is not None and check_tax_level:
                 if taxonomy_order.index(x.tax_level) <= tax_level:
                     break
+
+            # If we're at our desired level, make sure we write our output.
             if x.tax_level.upper() == args.level.upper() and write_output and x.num_reads > 0:
-                # full_taxonomy = tax_dict_to_string(taxonomy_dict, args.level)
                 if args.full_taxonomy:
                     full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
                     output_dict[full_taxonomy] = str(x.num_reads)
                 else:
                     output_dict[x.name] = str(x.num_reads)
+            # Sometimes we get groups or subphylums or superorders or something that cause all sorts of problems.
+            # ETE3 classifies them as no rank, but they still get reads assigned to them that end up being missed.
+            # If this is the case, we need to check their taxonomic level to see if they're above our tax level,
+            # and if so output their number of directly assigned reads.
+            elif x.tax_level == 'Other' and write_output and x.num_reads_direct > 0:
+                if args.full_taxonomy:
+                    full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
+                    good_to_write = True
+                    for i in range(taxonomy_order.index(args.level), len(taxonomy_order) - 1):
+                        if taxonomy_order[i][0].lower() + '_' in full_taxonomy:
+                            good_to_write = False
+                    if good_to_write:
+                        if ',' in x.name:
+                            x.name = x.name.replace(',', ':')
+                        output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads_direct)
+            # Other case is that we're at a tax level higher than desired. Here, report unassigned reads.
             elif write_output and taxonomy_order.index(args.level) > taxonomy_order.index(x.tax_level) \
                     and x.num_reads_direct > 0:
-                # full_taxonomy = tax_dict_to_string(taxonomy_dict, x.tax_level)
                 if args.full_taxonomy:
                     full_taxonomy = taxid_to_lineage_string(x.ncbi_tax_id)
                     output_dict[full_taxonomy + '_unassigned'] = str(x.num_reads_direct)
                 else:
                     output_dict[x.name + '_unassigned'] = str(x.num_reads_direct)
+
+            check_tax_level = True
         output_list_of_dicts.append(output_dict)
 
     # The above gets us to a point where we know what each sample has - now need to write it all to a nice output file.

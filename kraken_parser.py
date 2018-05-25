@@ -168,9 +168,9 @@ if __name__ == '__main__':
                         # Use descendant nodes to figure out what level we're equivalent to. If equivalent to desired
                         # level, we're taking it's place, anything higher is just another level.
                         inferred_tax_level = determine_unassigned_rank(x.ncbi_tax_id)
-                        if inferred_tax_level.capitalize() == args.level:
+                        if inferred_tax_level.capitalize() == args.level and x.num_reads != 0:
                             output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads)
-                        else:
+                        elif x.num_reads_direct != 0:
                             output_dict[full_taxonomy + ';' + x.name] = str(x.num_reads_direct)
             # Other case is that we're at a tax level higher than desired. Here, report unassigned reads.
             elif write_output and taxonomy_order.index(args.level) > taxonomy_order.index(x.tax_level) \
